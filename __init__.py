@@ -32,7 +32,8 @@ class PharcryptionWorld(World):
     """
     game: ClassVar[str] = "Pharcryption"
     data_version: ClassVar[int] = 0
-    option_definitions = PharcryptionOptions
+    options_dataclass = PharcryptionOptions
+    options: PharcryptionOptions
     item_name_to_id: ClassVar[Dict[str, int]] = {
         "1 Pharcoin":     ID_OFFSET + 0,
         "2 Pharcoins":    ID_OFFSET + 1,
@@ -70,20 +71,21 @@ class PharcryptionWorld(World):
     def generate_early(self) -> None:
         # Make all locations "priority".
         for location in self.location_name_to_id.keys():
-            self.multiworld.priority_locations[self.player].value.add(location)
+            self.options.priority_locations.value.add(location)
 
         # Make all items non-local.
         for item in self.item_name_to_id.keys():
-            self.multiworld.non_local_items[self.player].value.add(item)
+            self.options.non_local_items.value.add(item)
 
         # THIS CODE IS TERRIBLE, BUT IT DOES THE JOB
-        number_of_blocks = getattr(self.multiworld, "number_of_item_blocks")[self.player].value
-        items_per_block = getattr(self.multiworld, "number_of_items_per_block")[self.player].value
-        maximum_item_cost = getattr(self.multiworld, "maximum_pharcoin_cost")[self.player].value
-        self.total_item_cost = self.random.randint(
-            items_per_block * number_of_blocks * (maximum_item_cost - 3),  # Min
-            items_per_block * number_of_blocks * (maximum_item_cost - 2)   # Max
-        )
+        number_of_blocks = self.options.number_of_item_blocks.value
+        items_per_block = self.options.number_of_items_per_block.value
+        maximum_item_cost = self.options.maximum_pharcoin_cost.value
+        # self.total_item_cost = self.random.randint(
+        #     items_per_block * number_of_blocks,  # Min
+        #     items_per_block * number_of_blocks * maximum_item_cost   # Max
+        # )
+        self.total_item_cost = int(items_per_block * number_of_blocks * (maximum_item_cost + 1) / 2)
 
         item_cost_threshold = number_of_blocks * items_per_block
         max_item_costs: List[PharcryptionItemData] = []
@@ -105,10 +107,10 @@ class PharcryptionWorld(World):
             self.item_costs.setdefault(data.block, []).append(data)
 
     def create_items(self) -> None:
-        number_of_blocks = getattr(self.multiworld, "number_of_item_blocks")[self.player].value
-        number_of_items = getattr(self.multiworld, "number_of_items_per_block")[self.player].value * number_of_blocks
-        maximum_item_cost = getattr(self.multiworld, "maximum_pharcoin_cost")[self.player].value
-        extra_pharcoins = getattr(self.multiworld, "extra_pharcoins_per_player")[self.player].value * self.players
+        number_of_blocks = self.options.number_of_item_blocks.value
+        number_of_items = self.options.number_of_items_per_block.value * number_of_blocks
+        maximum_item_cost = self.options.maximum_pharcoin_cost.value
+        extra_pharcoins = self.options.extra_pharcoins_per_player.value * self.players
         final_total_cost = self.total_item_cost + extra_pharcoins
 
         item_pool: List[PharcryptionItem] = [self.create_item("1 Pharcoin") for _ in range(number_of_items)]
@@ -142,20 +144,21 @@ class PharcryptionWorld(World):
         self.multiworld.itempool += item_pool
 
     def create_regions(self) -> None:
-        number_of_blocks = getattr(self.multiworld, "number_of_item_blocks")[self.player].value
-        number_of_items_per_block = getattr(self.multiworld, "number_of_items_per_block")[self.player].value
+        number_of_blocks = self.options.number_of_item_blocks.value
+        number_of_items_per_block = self.options.number_of_items_per_block.value
 
         menu_region = Region("Menu", self.player, self.multiworld)
         previous_region = menu_region
 
         self.multiworld.regions.append(menu_region)
+        block_coins = 0
         for block in range(number_of_blocks):
             block_region = Region(f"Block {block + 1}", self.player, self.multiworld)
+            block_coins += sum(d.cost for d in self.item_costs.get(block - 1, []))
             previous_region.connect(
                 block_region,
                 None,
-                lambda state, b=block:
-                    self._get_pharcoin_count(state, self.player) >= sum(d.cost for d in self.item_costs.get(b - 1, []))
+                lambda state, b=block_coins: self._get_pharcoin_count(state, self.player) >= b
             )
 
             locations = {}
@@ -168,17 +171,21 @@ class PharcryptionWorld(World):
             self.multiworld.regions.append(block_region)
 
     def set_rules(self) -> None:
-        final_block = getattr(self.multiworld, "number_of_item_blocks")[self.player].value - 1
+        item_blocks = self.options.number_of_item_blocks.value
+        # final_block = self.options.number_of_item_blocks.value - 1
+        all_coins = 0
+        for b in range(item_blocks):
+            all_coins += sum(data.cost for data in self.item_costs[b])
         self.multiworld.completion_condition[self.player] = lambda state: (
-            self._get_pharcoin_count(state, self.player) >= sum(data.cost for data in self.item_costs[final_block])
+            self._get_pharcoin_count(state, self.player) >= all_coins
         )
 
     def fill_slot_data(self) -> Dict[str, Any]:
-        use_time_limit = bool(getattr(self.multiworld, "enable_time_limit")[self.player])
+        use_time_limit = bool(self.options.enable_time_limit.value)
         slot_data = {
-            "percentage": getattr(self.multiworld, "required_percentage_of_items_decrypted_for_block_unlock")[self.player].value,
-            "password": getattr(self.multiworld, "starting_password")[self.player].value,
-            "timelimit": getattr(self.multiworld, "time_limit_in_minutes")[self.player].value if use_time_limit else 0,
+            "percentage": self.options.required_percentage_of_items_decrypted_for_block_unlock.value,
+            "password": self.options.starting_password.value,
+            "timelimit": self.options.time_limit_in_minutes.value if use_time_limit else 0,
             "item_costs": {}
         }
 

@@ -1,6 +1,7 @@
 from typing import Dict
+from dataclasses import dataclass
 
-from Options import Range, DefaultOnToggle, FreeText, Option
+from Options import Range, DefaultOnToggle, FreeText, Option, PerGameCommonOptions
 
 
 class EnableTimeLimit(DefaultOnToggle):
@@ -71,13 +72,13 @@ class StartingPassword(FreeText):
     default = ""
 
 
-PharcryptionOptions: Dict[str, type(Option)] = {
-    "enable_time_limit": EnableTimeLimit,
-    "time_limit_in_minutes": TimeLimitInMinutes,
-    "maximum_pharcoin_cost": MaximumPharcoinCost,
-    "extra_pharcoins_per_player": ExtraPharcoinsPerPlayer,
-    "number_of_items_per_block": NumberOfItemsPerBlock,
-    "number_of_item_blocks": NumberOfItemBlocks,
-    "required_percentage_of_items_decrypted_for_block_unlock": RequiredPercentageOfItemsDecryptedForBlockUnlock,
-    "starting_password": StartingPassword,
-}
+@dataclass
+class PharcryptionOptions(PerGameCommonOptions):
+    enable_time_limit: EnableTimeLimit
+    time_limit_in_minutes: TimeLimitInMinutes
+    maximum_pharcoin_cost: MaximumPharcoinCost
+    extra_pharcoins_per_player: ExtraPharcoinsPerPlayer
+    number_of_items_per_block: NumberOfItemsPerBlock
+    number_of_item_blocks: NumberOfItemBlocks
+    required_percentage_of_items_decrypted_for_block_unlock: RequiredPercentageOfItemsDecryptedForBlockUnlock
+    starting_password: StartingPassword
