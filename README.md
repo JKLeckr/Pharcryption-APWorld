@@ -1,2 +1,2 @@
-# APWorldTemplate
-A template repo for creating base `apworld` files.
+# Pharcryption APWorld
+[Original Source](https://github.com/ThePhar/Archipelago/tree/pharcryption)
