@@ -1,0 +1,77 @@
+### Copyright 2025-2026 JKLeckr
+### SPDX-License-Identifier: MPL-2.0
+
+
+# This workflow will install Python dependencies, run tests and lint with a single version of Python
+# For more information see: https://help.github.com/actions/language-and-framework-guides/using-python-with-github-actions
+
+name: UnitTests
+
+on:
+  push:
+    paths:
+      - "**.py"
+      - '!examples/**'
+      - '!extras/**'
+      - '!tools/**'
+      - '.github/workflows/unittests.yml'
+  pull_request:
+    paths:
+      - "**.py"
+      - '!examples/**'
+      - '!extras/**'
+      - '!tools/**'
+      - '.github/workflows/unittests.yml'
+
+jobs:
+  unit:
+    runs-on: ${{ matrix.os }}
+    name: Test Python ${{ matrix.python.version }} ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: Archipelago/
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python:
+          - {version: '3.11'}
+          - {version: '3.12'}
+          - {version: '3.13'}
+        include:
+          - python: {version: '3.11'}  # old compat
+            os: windows-latest
+          - python: {version: '3.13'}  # current
+            os: windows-latest
+          - python: {version: '3.13'}  # current
+            os: macos-latest
+
+    steps:
+    - name: Checkout Archipelago
+      uses: actions/checkout@v6
+      with:
+        repository: JKLeckr/Archipelago
+        path: Archipelago
+        ref: base
+
+    - name: Checkout Pharcryption
+      uses: actions/checkout@v6
+      with:
+        path: Archipelago/worlds/pharcryption
+
+    - name: Set up Python ${{ matrix.python.version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python.version }}
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-subtests pytest-xdist
+        python ModuleUpdate.py --yes --force --append "WebHostLib/requirements.txt"
+        python Launcher.py --update_settings  # make sure host.yaml exists for tests
+
+    - name: Unittests
+      run: |
+        pytest -n auto ./test/general/ ./test/options/

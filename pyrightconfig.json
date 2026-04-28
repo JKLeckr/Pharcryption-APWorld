@@ -1,0 +1,22 @@
+{
+  "include": ["**/*.py"],
+
+  "exclude": ["**/__pycache__"],
+
+  "typeCheckingMode": "strict",
+  "reportImplicitOverride": "error",
+  "reportMissingImports": true,
+  "reportDeprecated": "error",
+
+  "deprecateTypingAliases": true,
+
+  "pythonVersion": "3.11",
+  "pythonPlatform": "Windows",
+  "stubPath": "./typings",
+
+  "executionEnvironments": [
+    {
+      "root": "../.."
+    }
+  ]
+}

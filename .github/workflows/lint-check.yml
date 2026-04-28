@@ -1,0 +1,48 @@
+### Copyright 2025-2026 JKLeckr
+### SPDX-License-Identifier: MPL-2.0
+
+name: LintCheck
+
+on:
+  pull_request:
+    paths:
+      - "**.py"
+      - "ruff.toml"
+      - ".github/workflows/lint-check.yml"
+  push:
+    paths:
+      - "**.py"
+      - "ruff.toml"
+      - ".github/workflows/lint-check.yml"
+
+jobs:
+  ruff:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Archipelago/
+
+    steps:
+      - name: Checkout Archipelago
+        uses: actions/checkout@v6
+        with:
+          repository: JKLeckr/Archipelago
+          path: Archipelago
+          ref: base
+
+      - name: Checkout Pharcryption
+        uses: actions/checkout@v6
+        with:
+          path: Archipelago/worlds/cuphead
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: "Install dependencies"
+        run: |
+          python -m pip install --upgrade pip ruff==0.15.12
+          python ModuleUpdate.py --append "WebHostLib/requirements.txt" --force --yes
+
+      - name: "Run ruff"
+        run: ruff --config ./ruff-jkl.toml check ./worlds/cuphead
