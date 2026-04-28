@@ -75,10 +75,6 @@ class PharcryptionWorld(World):
 
     @override
     def generate_early(self) -> None:
-        # Make all locations "priority".
-        for location in self.location_name_to_id.keys():
-            self.options.priority_locations.value.add(location)
-
         # In real Pharcryption seeds, Pharcoins should be found by other players.
         # Solo generation is used by Archipelago's generic world tests and has no partner world to place them in.
         if self._count_partner_players(self.multiworld) > 0:
@@ -167,9 +163,10 @@ class PharcryptionWorld(World):
 
         self.multiworld.regions.append(menu_region)
         block_coins = 0
+        required_percentage = self.options.required_percentage_of_items_decrypted_for_block_unlock.value / 100
         for block in range(number_of_blocks):
             block_region = Region(f"Block {block + 1}", self.player, self.multiworld)
-            block_coins += sum(d.cost for d in self.item_costs.get(block - 1, []))
+            block_coins += int(sum(d.cost for d in self.item_costs.get(block - 1, [])) * required_percentage)
             previous_region.connect(
                 block_region,
                 None,
@@ -177,7 +174,7 @@ class PharcryptionWorld(World):
                     not has_partner_players or self._get_pharcoin_count(state, self.player) >= b
             )
 
-            locations = {}
+            locations: dict[str, int] = {}
             for item in range(number_of_items_per_block):
                 location_name = f"Encrypted Item {item + 1} in Block {block + 1}"
                 locations[location_name] = self.location_name_to_id[location_name]
@@ -189,6 +186,17 @@ class PharcryptionWorld(World):
     @override
     def set_rules(self) -> None:
         item_blocks = self.options.number_of_item_blocks.value
+        encrypted_items = item_blocks * self.options.number_of_items_per_block.value
+        partner_locations = sum(
+            1 for location in self.multiworld.get_locations()
+            if self.multiworld.game[location.player] not in {"Pharcryption", "Archipelago"}
+        )
+        if self._count_partner_players(self.multiworld) > 0 and partner_locations < encrypted_items:
+            raise RuntimeError(
+                "Pharcryption requires at least as many non-Pharcryption locations as encrypted items. "
+                f"Found {partner_locations} non-Pharcryption locations for {encrypted_items} encrypted items."
+            )
+
         # final_block = self.options.number_of_item_blocks.value - 1
         all_coins = 0
         for b in range(item_blocks):
@@ -200,7 +208,7 @@ class PharcryptionWorld(World):
     @override
     def fill_slot_data(self) -> dict[str, Any]:
         use_time_limit = bool(self.options.enable_time_limit.value)
-        slot_data = {
+        slot_data: dict[str, Any] = {
             "percentage": self.options.required_percentage_of_items_decrypted_for_block_unlock.value,
             "password": self.options.starting_password.value,
             "timelimit": self.options.time_limit_in_minutes.value if use_time_limit else 0,
@@ -215,6 +223,8 @@ class PharcryptionWorld(World):
                 item = self.multiworld.get_location(location_name, self.player).item
                 if item is None:
                     raise ValueError(f"item is none for location {location_name} ({location_id})")
+                if item.code is None:
+                    raise ValueError(f"item code is none for location {location_name} ({location_id})")
                 slot_data["item_costs"][block][location_id] = {
                     "id": item.code,
                     "player": item.player,
