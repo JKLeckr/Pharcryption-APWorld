@@ -1,7 +1,6 @@
-from typing import Dict
 from dataclasses import dataclass
 
-from Options import Range, DefaultOnToggle, FreeText, Option, PerGameCommonOptions
+from Options import DefaultOnToggle, FreeText, PerGameCommonOptions, Range
 
 
 class EnableTimeLimit(DefaultOnToggle):

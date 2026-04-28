@@ -1,9 +1,12 @@
 from dataclasses import dataclass
-from typing import ClassVar, Dict, List, Any
+from typing import Any, ClassVar
 
-from BaseClasses import Item, Location, ItemClassification, MultiWorld, Region, CollectionState
+from typing_extensions import override
+
+from BaseClasses import CollectionState, Item, ItemClassification, Location, MultiWorld, Region
 from worlds.AutoWorld import World
-from .Options import PharcryptionOptions
+
+from .options import PharcryptionOptions
 
 ID_OFFSET = 400_400_000
 
@@ -33,8 +36,8 @@ class PharcryptionWorld(World):
     game: ClassVar[str] = "Pharcryption"
     data_version: ClassVar[int] = 0
     options_dataclass = PharcryptionOptions
-    options: PharcryptionOptions
-    item_name_to_id: ClassVar[Dict[str, int]] = {
+    options: PharcryptionOptions  # pyright: ignore[reportIncompatibleVariableOverride]
+    item_name_to_id: ClassVar[dict[str, int]] = {
         "1 Pharcoin":     ID_OFFSET + 0,
         "2 Pharcoins":    ID_OFFSET + 1,
         "3 Pharcoins":    ID_OFFSET + 2,
@@ -43,17 +46,19 @@ class PharcryptionWorld(World):
         "Decryption Key": ID_OFFSET + 5,
         "Nothing":        ID_OFFSET + 6,
     }
-    location_name_to_id: ClassVar[Dict[str, int]] = {
+    location_name_to_id: ClassVar[dict[str, int]] = {
         f"Encrypted Item {item_i + 1} in Block {block_i + 1}": ID_OFFSET + (100 * block_i) + item_i
         for item_i in range(100)
         for block_i in range(25)
     }
 
+    required_server_version: tuple[int, int, int] = (0, 5, 0)
+
     # Pharcryption specific instance values.
-    players: ClassVar[int]
-    item_costs: Dict[int, List[PharcryptionItemData]]
+    item_costs: dict[int, list[PharcryptionItemData]]
     total_item_cost: int
 
+    @override
     @classmethod
     def stage_assert_generate(cls, multiworld: MultiWorld) -> None:
         # Only allow one Pharcryption world.
@@ -61,21 +66,24 @@ class PharcryptionWorld(World):
             raise RuntimeError("Only one Pharcryption world is supported at this time.")
 
         # Ensure there is at least one other world (except for Archipelago) in addition to Pharcryption.
-        cls.players = sum(game not in ["Pharcryption", "Archipelago"] for game in multiworld.game.values())
-        if cls.players < 1:
+        if cls._count_partner_players(multiworld) < 1:
             raise RuntimeError("There must be at least one additional non-Pharcryption or non-Archipelago world.")
 
+    @override
     def create_item(self, name: str) -> PharcryptionItem:
         return PharcryptionItem(name, ItemClassification.progression, self.item_name_to_id[name], self.player)
 
+    @override
     def generate_early(self) -> None:
         # Make all locations "priority".
         for location in self.location_name_to_id.keys():
             self.options.priority_locations.value.add(location)
 
-        # Make all items non-local.
-        for item in self.item_name_to_id.keys():
-            self.options.non_local_items.value.add(item)
+        # In real Pharcryption seeds, Pharcoins should be found by other players.
+        # Solo generation is used by Archipelago's generic world tests and has no partner world to place them in.
+        if self._count_partner_players(self.multiworld) > 0:
+            for item in self.item_name_to_id.keys():
+                self.options.non_local_items.value.add(item)
 
         # THIS CODE IS TERRIBLE, BUT IT DOES THE JOB
         number_of_blocks = self.options.number_of_item_blocks.value
@@ -88,8 +96,8 @@ class PharcryptionWorld(World):
         self.total_item_cost = int(items_per_block * number_of_blocks * (maximum_item_cost + 1) / 2)
 
         item_cost_threshold = number_of_blocks * items_per_block
-        max_item_costs: List[PharcryptionItemData] = []
-        cur_item_costs: List[PharcryptionItemData] = [
+        max_item_costs: list[PharcryptionItemData] = []
+        cur_item_costs: list[PharcryptionItemData] = [
             PharcryptionItemData(block, 1) for block in range(number_of_blocks) for _ in range(items_per_block)
         ]
         while item_cost_threshold < self.total_item_cost:
@@ -106,21 +114,26 @@ class PharcryptionWorld(World):
         for data in [*max_item_costs, *cur_item_costs]:
             self.item_costs.setdefault(data.block, []).append(data)
 
+    @override
     def create_items(self) -> None:
+        partner_players = self._count_partner_players(self.multiworld)
+
         number_of_blocks = self.options.number_of_item_blocks.value
         number_of_items = self.options.number_of_items_per_block.value * number_of_blocks
-        maximum_item_cost = self.options.maximum_pharcoin_cost.value
-        extra_pharcoins = self.options.extra_pharcoins_per_player.value * self.players
+        _maximum_item_cost = self.options.maximum_pharcoin_cost.value
+        extra_pharcoins = self.options.extra_pharcoins_per_player.value * partner_players
         final_total_cost = self.total_item_cost + extra_pharcoins
 
-        item_pool: List[PharcryptionItem] = [self.create_item("1 Pharcoin") for _ in range(number_of_items)]
-        max_cost_item_pool: List[PharcryptionItem] = []
+        item_pool: list[PharcryptionItem] = [self.create_item("1 Pharcoin") for _ in range(number_of_items)]
+        max_cost_item_pool: list[PharcryptionItem] = []
         current_point_threshold = number_of_items
         while current_point_threshold < final_total_cost:
             random_item_index = self.random.randint(0, len(item_pool) - 1)
             item = item_pool[random_item_index]
 
             # Increase item size.
+            if item.code is None:
+                item.code = 0
             item.code += 1
             if item.name == "1 Pharcoin":
                 item.name = "2 Pharcoins"
@@ -143,7 +156,9 @@ class PharcryptionWorld(World):
         self.multiworld.itempool += max_cost_item_pool
         self.multiworld.itempool += item_pool
 
+    @override
     def create_regions(self) -> None:
+        has_partner_players = self._count_partner_players(self.multiworld) > 0
         number_of_blocks = self.options.number_of_item_blocks.value
         number_of_items_per_block = self.options.number_of_items_per_block.value
 
@@ -158,7 +173,8 @@ class PharcryptionWorld(World):
             previous_region.connect(
                 block_region,
                 None,
-                lambda state, b=block_coins: self._get_pharcoin_count(state, self.player) >= b
+                lambda state, b=block_coins:
+                    not has_partner_players or self._get_pharcoin_count(state, self.player) >= b
             )
 
             locations = {}
@@ -170,6 +186,7 @@ class PharcryptionWorld(World):
             block_region.add_locations(locations)
             self.multiworld.regions.append(block_region)
 
+    @override
     def set_rules(self) -> None:
         item_blocks = self.options.number_of_item_blocks.value
         # final_block = self.options.number_of_item_blocks.value - 1
@@ -180,7 +197,8 @@ class PharcryptionWorld(World):
             self._get_pharcoin_count(state, self.player) >= all_coins
         )
 
-    def fill_slot_data(self) -> Dict[str, Any]:
+    @override
+    def fill_slot_data(self) -> dict[str, Any]:
         use_time_limit = bool(self.options.enable_time_limit.value)
         slot_data = {
             "percentage": self.options.required_percentage_of_items_decrypted_for_block_unlock.value,
@@ -193,7 +211,10 @@ class PharcryptionWorld(World):
             slot_data["item_costs"][block] = {}
             for index, data in enumerate(_list, 0):
                 location_id = ID_OFFSET + (block * 100) + index
-                item = self.multiworld.get_location(self.location_id_to_name[location_id], self.player).item
+                location_name = self.location_id_to_name[location_id]
+                item = self.multiworld.get_location(location_name, self.player).item
+                if item is None:
+                    raise ValueError(f"item is none for location {location_name} ({location_id})")
                 slot_data["item_costs"][block][location_id] = {
                     "id": item.code,
                     "player": item.player,
@@ -201,6 +222,13 @@ class PharcryptionWorld(World):
                 }
 
         return slot_data
+
+    @staticmethod
+    def _count_partner_players(multiworld: MultiWorld) -> int:
+        return sum(
+            game not in {"Pharcryption", "Archipelago"}
+            for game in multiworld.game.values()
+        )
 
     @staticmethod
     def _get_pharcoin_count(state: CollectionState, player: int) -> int:
